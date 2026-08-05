@@ -1,0 +1,1178 @@
+---
+openapi: 3.0.3
+info:
+  title: Whatsplaid API
+  version: 1.0.0
+  description: |
+    Public Whatsplaid API for actions and external system integrations with the platform.
+
+    Use this API when another system needs to trigger Whatsplaid resources. Examples:
+
+    - Validate account, store, and active modules.
+    - Create, update, and segment contacts with tags and custom fields.
+    - Send text messages inside the WhatsApp 24-hour customer service window.
+    - Query conversations and messages.
+    - Request human handoff.
+    - Manage a conversation cart when the feature is active.
+    - Query data through native gateways already connected, such as Nuvemshop, Wix, and Shopify.
+
+    To connect an ecommerce platform, ERP, or custom database that does not have a native integration,
+    also use the "Custom Data Connector Contract" specification. In this model, the customer's system
+    exposes endpoints and Whatsplaid queries those endpoints during the conversation.
+
+    The outgoing webhook is a separate flow: Whatsplaid sends a POST request to a customer URL when
+    it captures a lead during the conversation.
+servers:
+- url: https://api.whatsplaid.com/v1
+  description: Production
+security:
+- bearerAuth: []
+tags:
+- name: Account
+  description: Store, modules, and active connection.
+- name: Ecommerce
+  description: Gateway for native integrations already connected. For custom systems, use the Custom Data Connector contract.
+- name: Conversations
+  description: Cart associated with a conversation.
+- name: Outgoing Webhooks
+  description: Webhooks sent by Whatsplaid to the customer's system.
+- name: Contacts
+  description: Create, query, and update contacts/leads.
+- name: Tags and Fields
+  description: Segmentation using tags and custom fields.
+- name: Messaging
+  description: Message sending that respects the WhatsApp service window.
+- name: Human Handoff
+  description: Human handoff requests.
+paths:
+  "/store":
+    get:
+      tags:
+      - Account
+      summary: Return store data
+      description: Returns company identification, connected ecommerce provider, and active modules.
+      responses:
+        '200':
+          description: Store data
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/StoreResponse"
+              example:
+                status: ok
+                data:
+                  company_id: 10
+                  name: My Store
+                  email: contact@store.com
+                  language: PT
+                  country: BR
+                  ecommerce:
+                    provider: shopify
+                    external_store_id: '123456'
+                    store_url: mystore.myshopify.com
+                    vendor: ''
+                    connected: true
+                  modules:
+                    leads: true
+                    sales_consultant: true
+                    post_sales: true
+                    human_handoff: false
+                    knowledge_base: true
+                    cart: true
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/me":
+    get:
+      tags:
+      - Account
+      summary: "/store alias"
+      description: Returns the same data as /store.
+      responses:
+        '200':
+          description: Store data
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/StoreResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/modules":
+    get:
+      tags:
+      - Account
+      summary: Return active modules
+      responses:
+        '200':
+          description: Active modules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    "$ref": "#/components/schemas/Modules"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/integration/test":
+    post:
+      tags:
+      - Ecommerce
+      summary: Validate ecommerce connection
+      description: Confirms whether an ecommerce provider is connected and which resources are available.
+      responses:
+        '200':
+          description: Connection status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  connected:
+                    type: boolean
+                    example: true
+                  ecommerce:
+                    "$ref": "#/components/schemas/EcommerceConnection"
+                  capabilities:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                    - products:read
+                    - orders:read
+                    - cart:checkout
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/products/search":
+    get:
+      tags:
+      - Ecommerce
+      summary: Search products through the native gateway
+      description: |
+        Searches products in the native ecommerce provider already connected to Whatsplaid, such as Nuvemshop, Wix, or Shopify.
+
+        For custom ecommerce platforms, ERPs, or proprietary databases, prefer the Custom Data Connector contract,
+        where the customer's system exposes the endpoint and Whatsplaid queries it during the conversation.
+      parameters:
+      - name: q
+        in: query
+        schema:
+          type: string
+        example: sneakers
+        description: Search term, name, SKU, tag, or part of the description.
+      - name: url
+        in: query
+        schema:
+          type: string
+          format: uri
+        example: https://store.com/products/sneakers
+        description: Product URL when the plugin or assistant already has the link.
+      responses:
+        '200':
+          description: Resultado da busca
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    type: object
+                    additionalProperties: true
+        '422':
+          "$ref": "#/components/responses/ValidationError"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/products/{id}":
+    get:
+      tags:
+      - Ecommerce
+      summary: Get product by identifier
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: '123456'
+      responses:
+        '200':
+          description: Product found or raw response from the connected integration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    type: object
+                    additionalProperties: true
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/orders/search":
+    get:
+      tags:
+      - Ecommerce
+      summary: Search orders through the native gateway
+      description: |
+        Searches orders in the native ecommerce provider already connected to Whatsplaid. Send at least one filter.
+
+        For custom ecommerce platforms, ERPs, or proprietary databases, prefer the Custom Data Connector contract,
+        where the customer's system exposes the order endpoint.
+      parameters:
+      - name: number
+        in: query
+        schema:
+          type: string
+        example: '1001'
+        description: Order number or ID.
+      - name: email
+        in: query
+        schema:
+          type: string
+          format: email
+        example: customer@store.com
+      - name: phone
+        in: query
+        schema:
+          type: string
+        example: '5511999999999'
+      responses:
+        '200':
+          description: Resultado da consulta
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    type: object
+                    additionalProperties: true
+        '422':
+          "$ref": "#/components/responses/ValidationError"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/orders/{id}":
+    get:
+      tags:
+      - Ecommerce
+      summary: Get order by ID or number
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: '1001'
+      responses:
+        '200':
+          description: Order found or raw response from the connected integration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    type: object
+                    additionalProperties: true
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/customers/search":
+    get:
+      tags:
+      - Ecommerce
+      summary: Search customers
+      description: Searches registered customers when the customer storage structure is configured.
+      parameters:
+      - name: id
+        in: query
+        schema:
+          type: string
+        example: '987'
+      - name: email
+        in: query
+        schema:
+          type: string
+          format: email
+        example: customer@store.com
+      - name: phone
+        in: query
+        schema:
+          type: string
+        example: '5511999999999'
+      responses:
+        '200':
+          description: Clientes encontrados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/Customer"
+        '501':
+          "$ref": "#/components/responses/ManualDatabaseChangeRequired"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/customers/{id}":
+    get:
+      tags:
+      - Ecommerce
+      summary: Get customer
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: '987'
+      responses:
+        '200':
+          description: Customer found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    "$ref": "#/components/schemas/Customer"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '501':
+          "$ref": "#/components/responses/ManualDatabaseChangeRequired"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/ecommerce/customers/{id}/orders":
+    get:
+      tags:
+      - Ecommerce
+      summary: Get a customer's orders
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        example: '987'
+      responses:
+        '200':
+          description: Orders found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    type: object
+                    additionalProperties: true
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '501':
+          "$ref": "#/components/responses/ManualDatabaseChangeRequired"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/conversations/{phone}/cart":
+    get:
+      tags:
+      - Conversations
+      summary: List conversation cart
+      parameters:
+      - "$ref": "#/components/parameters/Phone"
+      responses:
+        '200':
+          description: Carrinho atual
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/GenericOkResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+    delete:
+      tags:
+      - Conversations
+      summary: Clear conversation cart
+      parameters:
+      - "$ref": "#/components/parameters/Phone"
+      responses:
+        '200':
+          description: Carrinho limpo
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/GenericOkResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/conversations/{phone}/cart/items":
+    post:
+      tags:
+      - Conversations
+      summary: Add item to cart
+      parameters:
+      - "$ref": "#/components/parameters/Phone"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id_produto:
+                  type: string
+                  example: '123456'
+                name:
+                  type: string
+                  example: Blue Sneakers
+                quantity:
+                  type: integer
+                  example: 1
+                price:
+                  type: number
+                  example: 149.9
+              additionalProperties: true
+      responses:
+        '200':
+          description: Item adicionado
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/GenericOkResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/conversations/{phone}/cart/items/{itemId}":
+    delete:
+      tags:
+      - Conversations
+      summary: Remove item from cart
+      parameters:
+      - "$ref": "#/components/parameters/Phone"
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: '123456'
+      responses:
+        '200':
+          description: Item removido
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/GenericOkResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/conversations/{phone}/cart/checkout":
+    post:
+      tags:
+      - Conversations
+      summary: Checkout cart
+      parameters:
+      - "$ref": "#/components/parameters/Phone"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Checkout created or response from the connected integration
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/GenericOkResponse"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+  "/webhook/outgoing/lead-capture":
+    post:
+      tags:
+      - Outgoing Webhooks
+      summary: Payload sent by Whatsplaid to the customer's endpoint
+      description: |
+        This endpoint is illustrative: it represents the request sent by Whatsplaid to the
+        URL configured in the API & Webhooks panel.
+
+        The customer's system must respond with HTTP 200 or 204 for the endpoint to be considered valid.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/LeadCaptureWebhook"
+            example:
+              id_lead: 123
+              firstname: Jane
+              lastname: Smith
+              email: jane@example.com
+              phone: '551199999999'
+      responses:
+        '200':
+          description: Expected response from the customer's system
+        '204':
+          description: Expected response from the customer's system with no body
+  "/contacts":
+    get:
+      tags:
+      - Contacts
+      summary: List contacts
+      description: Lists contacts/leads with filters. Use pagination with limit and offset.
+      parameters:
+      - name: phone
+        in: query
+        schema:
+          type: string
+        example: '5511999999999'
+      - name: email
+        in: query
+        schema:
+          type: string
+          format: email
+      - name: tag
+        in: query
+        schema:
+          type: string
+      - name: date_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          default: 0
+      responses:
+        '200':
+          description: Contacts found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ContactsResponse"
+    post:
+      tags:
+      - Contacts
+      summary: Create or update contact
+      description: Creates or updates a contact using phone as the primary key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ContactUpsert"
+            example:
+              phone: '5511999999999'
+              name: Jane Smith
+              email: jane@example.com
+              tags:
+              - buyer
+              - vip
+              custom_fields:
+                plan: premium
+                last_purchase: '2026-05-29'
+      responses:
+        '200':
+          description: Contact created or updated
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ContactWriteResponse"
+        '422':
+          "$ref": "#/components/responses/ValidationError"
+  "/contacts/{contactId}":
+    get:
+      tags:
+      - Contacts
+      summary: Get contact
+      parameters:
+      - "$ref": "#/components/parameters/ContactId"
+      responses:
+        '200':
+          description: Contact found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ContactResponse"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+  "/contacts/{contactId}/tags":
+    post:
+      tags:
+      - Tags and Fields
+      summary: Add tags
+      parameters:
+      - "$ref": "#/components/parameters/ContactId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tags
+              properties:
+                tags:
+                  type: array
+                  items:
+                    type: string
+              example:
+                tags:
+                - buyer
+                - vip
+      responses:
+        '200':
+          description: Tags added
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ContactResponse"
+    delete:
+      tags:
+      - Tags and Fields
+      summary: Remove tags
+      parameters:
+      - "$ref": "#/components/parameters/ContactId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tags
+              properties:
+                tags:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Tags removed
+  "/contacts/{contactId}/custom-fields":
+    patch:
+      tags:
+      - Tags and Fields
+      summary: Update custom fields
+      parameters:
+      - "$ref": "#/components/parameters/ContactId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+            example:
+              plan: premium
+              last_purchase: '2026-05-29'
+      responses:
+        '200':
+          description: Custom fields updated
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ContactResponse"
+  "/messages/send":
+    post:
+      tags:
+      - Messaging
+      summary: Send text message
+      description: Sends free-form text only when there is a customer message received in the last 24 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - phone
+              - text
+              properties:
+                phone:
+                  type: string
+                type:
+                  type: string
+                  enum:
+                  - text
+                  default: text
+                text:
+                  type: string
+            example:
+              phone: '5511999999999'
+              text: Hello, your support request has been updated.
+      responses:
+        '200':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  sent:
+                    type: boolean
+                  window_opened_by:
+                    type: string
+        '403':
+          description: Outside the service window
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ErrorResponse"
+              example:
+                status: error
+                code: outside_whatsapp_customer_service_window
+                message: Text messages can only be sent inside the WhatsApp customer service window
+  "/conversations":
+    get:
+      tags:
+      - Conversations
+      summary: List conversations
+      description: Requer phone ou date_from para evitar exportacoes amplas.
+      parameters:
+      - name: phone
+        in: query
+        schema:
+          type: string
+      - name: date_from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: Conversas encontradas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/Conversation"
+        '422':
+          "$ref": "#/components/responses/ValidationError"
+  "/conversations/{conversationId}/messages":
+    get:
+      tags:
+      - Conversations
+      summary: List messages from a conversation
+      parameters:
+      - name: conversationId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Conversation phone number.
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          default: 0
+      responses:
+        '200':
+          description: Mensagens encontradas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/Message"
+  "/handoffs":
+    post:
+      tags:
+      - Human Handoff
+      summary: Request human handoff
+      description: Registers a human handoff request using the company's current configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - phone
+              properties:
+                phone:
+                  type: string
+                name:
+                  type: string
+                email:
+                  type: string
+                reason:
+                  type: string
+                category:
+                  type: string
+                priority:
+                  type: string
+                  enum:
+                  - low
+                  - medium
+                  - high
+            example:
+              phone: '5511999999999'
+              name: Jane Smith
+              email: jane@example.com
+              reason: Customer requested human support
+              priority: medium
+      responses:
+        '200':
+          description: Handoff requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API token
+  parameters:
+    Phone:
+      name: phone
+      in: path
+      required: true
+      schema:
+        type: string
+      example: '5511999999999'
+    ContactId:
+      name: contactId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Lead ID or contact phone number.
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            message: Authorization Bearer token not provided
+    ValidationError:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            message: number, email or phone is required
+    NotFound:
+      description: Record not found
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            message: Customer not found
+  schemas:
+    StoreResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        data:
+          type: object
+          properties:
+            company_id:
+              type: integer
+            name:
+              type: string
+            email:
+              type: string
+            language:
+              type: string
+            country:
+              type: string
+            ecommerce:
+              "$ref": "#/components/schemas/EcommerceConnection"
+            modules:
+              "$ref": "#/components/schemas/Modules"
+    EcommerceConnection:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: shopify
+        external_store_id:
+          type: string
+          example: '123456'
+        store_url:
+          type: string
+          example: mystore.myshopify.com
+        vendor:
+          type: string
+        connected:
+          type: boolean
+          example: true
+    Modules:
+      type: object
+      properties:
+        leads:
+          type: boolean
+        sales_consultant:
+          type: boolean
+        post_sales:
+          type: boolean
+        human_handoff:
+          type: boolean
+        knowledge_base:
+          type: boolean
+        cart:
+          type: boolean
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '987'
+        external_id:
+          type: string
+          example: woo-55
+        name:
+          type: string
+          example: Jane Smith
+        email:
+          type: string
+          example: jane@example.com
+        phone:
+          type: string
+          example: '551199999999'
+        country:
+          type: string
+          example: BR
+        state:
+          type: string
+          example: SP
+        city:
+          type: string
+          example: Sao Paulo
+        ecommerce:
+          type: string
+          example: woocommerce
+        store_url:
+          type: string
+          example: https://store.com
+    LeadCaptureWebhook:
+      type: object
+      properties:
+        id_lead:
+          type: integer
+          example: 123
+        firstname:
+          type: string
+          example: Jane
+        lastname:
+          type: string
+          example: Smith
+        email:
+          type: string
+          example: jane@example.com
+        phone:
+          type: string
+          example: '551199999999'
+    GenericOkResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        data:
+          type: object
+          additionalProperties: true
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+        code:
+          type: string
+    ContactUpsert:
+      type: object
+      required:
+      - phone
+      properties:
+        phone:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+    ContactsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        data:
+          type: array
+          items:
+            "$ref": "#/components/schemas/Contact"
+    ContactWriteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        created:
+          type: boolean
+        data:
+          "$ref": "#/components/schemas/Contact"
+    ContactResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        data:
+          "$ref": "#/components/schemas/Contact"
+    Contact:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        country:
+          type: string
+        active:
+          type: boolean
+        human_handoff:
+          type: boolean
+        created_at:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        phone:
+          type: string
+        name:
+          type: string
+        messages_count:
+          type: integer
+        last_message_at:
+          type: string
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        whatsapp_message_id:
+          type: string
+        conversation_id:
+          type: string
+        phone:
+          type: string
+        name:
+          type: string
+        direction:
+          type: string
+          enum:
+          - inbound
+          - outbound
+        type:
+          type: string
+        mimetype:
+          type: string
+        status:
+          type: string
+        body:
+          type: string
+        error:
+          type: string
+        created_at:
+          type: string
+        sent_at:
+          type: string
+        delivered_at:
+          type: string
+        read_at:
+          type: string

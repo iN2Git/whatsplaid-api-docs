@@ -1,0 +1,459 @@
+openapi: 3.0.3
+info:
+  title: Whatsplaid Custom Data Connector
+  version: 1.0.0
+  description: |
+    Contract for connecting any ecommerce platform, ERP, CRM, or custom database to the Whatsplaid assistant.
+
+    This specification describes the endpoints that the customer's system must expose so Whatsplaid can
+    query real-time data during a WhatsApp conversation. Whatsplaid does not use products or orders as
+    its primary source of truth: it calls the configured external system and turns the response into a
+    natural-language answer in WhatsApp.
+
+    Flow:
+    1. The customer asks something in WhatsApp, such as "what is the status of order 1001?".
+    2. Whatsplaid identifies the intent, such as order.get.
+    3. Whatsplaid calls the endpoint configured in the customer's system.
+    4. The customer's system returns JSON using the agreed format.
+    5. Whatsplaid answers the customer using the returned data.
+
+    Panel configuration:
+    - Enter the external system base URL in Integrations > API & Webhooks > External connector.
+    - Configure product and order paths, for example /products/search and /orders/search.
+    - Test both products and orders before activating the connector.
+    - Once active, the assistant uses these endpoints during real conversation queries.
+    - Calls made by the assistant appear in the external connector logs when the log table is configured.
+
+servers:
+  - url: https://api.yourcompany.com/whatsplaid
+    description: Example base URL for the customer's system
+
+tags:
+  - name: Products
+    description: Endpoints exposed by the customer's system for product search and lookup.
+  - name: Orders
+    description: Endpoints exposed by the customer's system for order lookup.
+  - name: Customers
+    description: Optional endpoints for customer identification.
+  - name: Availability
+    description: Optional endpoints for scheduling, stock, or availability.
+  - name: Security
+    description: Expected authentication and response rules.
+
+paths:
+  /products/search:
+    get:
+      tags:
+        - Products
+      summary: Search products
+      description: Called by Whatsplaid when the customer asks about products, categories, price, or availability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          example: blue sneakers
+        - name: phone
+          in: query
+          required: false
+          schema:
+            type: string
+          example: '5511999999999'
+          description: Customer phone number from the conversation, when available.
+      responses:
+        '200':
+          description: Products found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductSearchResponse'
+              example:
+                products:
+                  - id: SKU-1001
+                    name: Blue Sneakers
+                    description: Blue sports sneakers
+                    price: 149.9
+                    currency: BRL
+                    available: true
+                    stock_quantity: 8
+                    url: https://store.com/products/blue-sneakers
+                    image_url: https://store.com/images/blue-sneakers.jpg
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /products/{id}:
+    get:
+      tags:
+        - Products
+      summary: Get a specific product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: SKU-1001
+      responses:
+        '200':
+          description: Product found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /orders/search:
+    get:
+      tags:
+        - Orders
+      summary: Search orders
+      description: Called when Whatsplaid needs to find orders by number, email, or phone.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: number
+          in: query
+          schema:
+            type: string
+          example: '1001'
+        - name: email
+          in: query
+          schema:
+            type: string
+            format: email
+          example: customer@store.com
+        - name: phone
+          in: query
+          schema:
+            type: string
+          example: '5511999999999'
+      responses:
+        '200':
+          description: Orders found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSearchResponse'
+              example:
+                orders:
+                  - id: ORD-1001
+                    number: '1001'
+                    status: shipped
+                    payment_status: paid
+                    fulfillment_status: shipped
+                    total: 149.9
+                    currency: BRL
+                    created_at: '2026-05-29T10:00:00-03:00'
+                    customer:
+                      name: Jane Smith
+                      email: jane@example.com
+                      phone: '5511999999999'
+                    tracking:
+                      code: BR123456789
+                      url: https://carrier.com/tracking/BR123456789
+                    items:
+                      - name: Blue Sneakers
+                        quantity: 1
+                        price: 149.9
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /orders/{id}:
+    get:
+      tags:
+        - Orders
+      summary: Get a specific order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: ORD-1001
+      responses:
+        '200':
+          description: Order found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /customers/search:
+    get:
+      tags:
+        - Customers
+      summary: Search customers
+      description: Optional endpoint for identifying a customer before querying orders, contracts, or history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: email
+          in: query
+          schema:
+            type: string
+            format: email
+        - name: phone
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Customers found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+
+  /availability:
+    get:
+      tags:
+        - Availability
+      summary: Check availability
+      description: Optional endpoint for services, scheduling, business hours, stock, or operational capacity.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+          example: appointment
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          example: '2026-06-01'
+      responses:
+        '200':
+          description: Availability found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slots:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        starts_at:
+                          type: string
+                          format: date-time
+                        ends_at:
+                          type: string
+                          format: date-time
+                        available:
+                          type: boolean
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Connector token
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: unauthorized
+              message: Invalid token
+    ValidationError:
+      description: Invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: validation_error
+              message: Provide number, email, or phone
+    NotFound:
+      description: Record not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: not_found
+              message: Record not found
+
+  schemas:
+    ProductSearchResponse:
+      type: object
+      required:
+        - products
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+
+    ProductResponse:
+      type: object
+      required:
+        - product
+      properties:
+        product:
+          $ref: '#/components/schemas/Product'
+
+    Product:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        sku:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+          example: BRL
+        available:
+          type: boolean
+        stock_quantity:
+          type: integer
+        url:
+          type: string
+          format: uri
+        image_url:
+          type: string
+          format: uri
+        metadata:
+          type: object
+          additionalProperties: true
+
+    OrderSearchResponse:
+      type: object
+      required:
+        - orders
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+
+    OrderResponse:
+      type: object
+      required:
+        - order
+      properties:
+        order:
+          $ref: '#/components/schemas/Order'
+
+    Order:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        status:
+          type: string
+          example: shipped
+        payment_status:
+          type: string
+          example: paid
+        fulfillment_status:
+          type: string
+          example: shipped
+        total:
+          type: number
+        currency:
+          type: string
+          example: BRL
+        created_at:
+          type: string
+          format: date-time
+        customer:
+          $ref: '#/components/schemas/Customer'
+        tracking:
+          type: object
+          properties:
+            code:
+              type: string
+            url:
+              type: string
+              format: uri
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              quantity:
+                type: integer
+              price:
+                type: number
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string

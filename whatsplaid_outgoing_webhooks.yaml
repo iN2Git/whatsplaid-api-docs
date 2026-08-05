@@ -1,0 +1,70 @@
+openapi: 3.0.3
+info:
+  title: Whatsplaid Outgoing Webhooks
+  version: 1.0.0
+  description: |
+    Contract for webhooks sent by Whatsplaid to the customer's system.
+
+    Outgoing webhooks are different from the public API and Custom Data Connectors:
+
+    - Public API: your system calls Whatsplaid.
+    - Custom Data Connector: Whatsplaid calls your system to query data.
+    - Outgoing webhook: Whatsplaid notifies your system when it captures a lead during a conversation.
+
+    Current status:
+    - lead.created / LEAD_CAPTURE is implemented in the current panel.
+
+servers:
+  - url: https://your-system.com/webhooks/whatsplaid
+    description: URL configured by the customer in the Whatsplaid panel
+
+tags:
+  - name: Current
+    description: Webhook currently configurable in the panel.
+
+paths:
+  /lead-created:
+    post:
+      tags:
+        - Current
+      summary: Lead captured
+      description: |
+        Payload sent by Whatsplaid when the assistant captures a new lead.
+
+        In the current panel this event appears as LEAD_CAPTURE.
+        The customer's endpoint must respond with HTTP 200 or 204.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadCreatedPayload'
+            example:
+              id_lead: 123
+              firstname: Jane
+              lastname: Smith
+              email: jane@example.com
+              phone: '551199999999'
+      responses:
+        '200':
+          description: Received successfully
+        '204':
+          description: Received successfully with no response body
+components:
+  schemas:
+    LeadCreatedPayload:
+      type: object
+      required:
+        - id_lead
+        - phone
+      properties:
+        id_lead:
+          type: integer
+        firstname:
+          type: string
+        lastname:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
