@@ -65,7 +65,7 @@
       --page-bg: #0e1419;
       --surface: #161d23;
       --text: #f1f5f9;
-      --muted: #b7c0ca;
+      --muted: #c7d0db;
       --line: #344047;
       --input-bg: #1b2428;
       --code-bg: #10171c;
@@ -355,8 +355,41 @@
     html[data-theme="dark"] .swagger-ui .prop-format { color: var(--text); }
 
     html[data-theme="dark"] .swagger-ui .opblock-summary-description,
+    html[data-theme="dark"] .swagger-ui .opblock-tag small,
+    html[data-theme="dark"] .swagger-ui .opblock-description-wrapper p,
+    html[data-theme="dark"] .swagger-ui .opblock-external-docs-wrapper p,
+    html[data-theme="dark"] .swagger-ui .opblock-title_normal p,
+    html[data-theme="dark"] .swagger-ui .markdown p,
+    html[data-theme="dark"] .swagger-ui .renderedMarkdown p,
     html[data-theme="dark"] .swagger-ui .parameter__in,
-    html[data-theme="dark"] .swagger-ui .model-hint { color: var(--muted); }
+    html[data-theme="dark"] .swagger-ui .model-hint,
+    html[data-theme="dark"] .swagger-ui table thead tr td,
+    html[data-theme="dark"] .swagger-ui table thead tr th,
+    html[data-theme="dark"] .swagger-ui .response-col_links,
+    html[data-theme="dark"] .swagger-ui .responses-table td,
+    html[data-theme="dark"] .swagger-ui .parameters-col_description,
+    html[data-theme="dark"] .swagger-ui .parameter__deprecated,
+    html[data-theme="dark"] .swagger-ui .tab li button.tablinks { color: var(--muted); }
+
+    html[data-theme="dark"] .swagger-ui .opblock-section-header h4,
+    html[data-theme="dark"] .swagger-ui .responses-inner h3,
+    html[data-theme="dark"] .swagger-ui .responses-inner h4,
+    html[data-theme="dark"] .swagger-ui .parameters-container h4,
+    html[data-theme="dark"] .swagger-ui .execute-wrapper .btn,
+    html[data-theme="dark"] .swagger-ui .btn { color: var(--text); }
+
+    html[data-theme="dark"] .swagger-ui input::placeholder,
+    html[data-theme="dark"] .swagger-ui textarea::placeholder {
+      color: #aeb8c5;
+      opacity: 1;
+    }
+
+    html[data-theme="dark"] .swagger-ui .btn:disabled,
+    html[data-theme="dark"] .swagger-ui .btn[disabled] {
+      color: #aeb8c5;
+      border-color: #7f8a98;
+      opacity: 0.72;
+    }
 
     html[data-theme="dark"] .swagger-ui .info a { color: #60a5fa; }
 
