@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.0.0
+  version: 1.5.4
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -13,15 +13,25 @@ info:
     - Send text messages inside the WhatsApp 24-hour customer service window.
     - Query conversations and messages.
     - Request human handoff.
-    - Manage a conversation cart when the feature is active.
-    - Query data through native gateways already connected, such as Nuvemshop, Wix, and Shopify.
+    - Query products and orders through data sources already connected to Whatsplaid.
 
-    To connect an ecommerce platform, ERP, or custom database that does not have a native integration,
-    also use the "Custom Data Connector Contract" specification. In this model, the customer's system
-    exposes endpoints and Whatsplaid queries those endpoints during the conversation.
+    This public API is called by external systems that want to use Whatsplaid resources. Product and
+    order data used by the assistant follow the opposite direction: Whatsplaid calls either a native
+    integration or the endpoints described by the "Custom Data Connector Contract" during the conversation.
+    An external automation workflow may implement that connector by exposing webhooks and querying
+    the customer's own database, ERP, spreadsheet, ecommerce platform, or API.
 
-    The outgoing webhook is a separate flow: Whatsplaid sends a POST request to a customer URL when
-    it captures a lead during the conversation.
+    Outgoing webhooks are a separate flow: Whatsplaid sends enabled lead, message, ticket, and AI-agent
+    events to the customer URL. The dedicated "Whatsplaid Outgoing Webhooks" specification is the
+    authoritative contract for all seven events, their payloads, headers, and retry behavior.
+
+    List endpoints use offset pagination and return `limit`, `offset`, `next_offset`, and `has_more`.
+    Idempotency-Key is reserved but is not active until persistent per-company storage is provisioned;
+    clients must not assume replay protection yet.
+
+    Resource endpoints return HTTP 403 with `code: capability_unavailable` when the account's
+    plan, modules, configuration, WhatsApp connection, or ecommerce integration does not permit
+    the operation. Use `/capabilities` to discover availability before building dynamic interfaces.
 servers:
 - url: https://api.whatsplaid.com/v1
   description: Production
@@ -31,9 +41,11 @@ tags:
 - name: Account
   description: Store, modules, and active connection.
 - name: Ecommerce
-  description: Gateway for native integrations already connected. For custom systems, use the Custom Data Connector contract.
+  description: Product and order queries through the data source configured in Whatsplaid.
 - name: Conversations
-  description: Cart associated with a conversation.
+  description: Conversations initiated by contacts and their message history.
+- name: AI Agent
+  description: Editable instructions used by the company's AI agent.
 - name: Outgoing Webhooks
   description: Webhooks sent by Whatsplaid to the customer's system.
 - name: Contacts
@@ -44,13 +56,15 @@ tags:
   description: Message sending that respects the WhatsApp service window.
 - name: Human Handoff
   description: Human handoff requests.
+- name: Tickets
+  description: Human-service ticket consultation and controlled closure.
 paths:
   "/store":
     get:
       tags:
       - Account
       summary: Return store data
-      description: Returns company identification, connected ecommerce provider, and active modules.
+      description: Returns company identification, connected ecommerce provider, and active modules. A successful request with a dedicated Zapier token confirms the pending Zapier connection for that account.
       responses:
         '200':
           description: Store data
@@ -78,7 +92,6 @@ paths:
                     post_sales: true
                     human_handoff: false
                     knowledge_base: true
-                    cart: true
         '401':
           "$ref": "#/components/responses/Unauthorized"
   "/me":
@@ -86,7 +99,7 @@ paths:
       tags:
       - Account
       summary: "/store alias"
-      description: Returns the same data as /store.
+      description: Returns the same data as /store, including confirmation of a pending connection authenticated with a dedicated Zapier token.
       responses:
         '200':
           description: Store data
@@ -116,12 +129,39 @@ paths:
                     "$ref": "#/components/schemas/Modules"
         '401':
           "$ref": "#/components/responses/Unauthorized"
+  "/capabilities":
+    get:
+      tags:
+      - Account
+      summary: Return effective account capabilities
+      description: |
+        Returns the operations that are effectively available after applying account status,
+        plan entitlement, enabled modules, feature configuration, and connected integrations.
+        API consumers should use this endpoint instead of assuming that an operation is available.
+      responses:
+        '200':
+          description: Effective capabilities and structured unavailability reasons
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  data:
+                    "$ref": "#/components/schemas/Capabilities"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
   "/ecommerce/integration/test":
     post:
       tags:
       - Ecommerce
-      summary: Validate ecommerce connection
-      description: Confirms whether an ecommerce provider is connected and which resources are available.
+      summary: Inspect ecommerce configuration
+      description: |
+        Reports whether an ecommerce provider is configured and which resources the current
+        account exposes. This operation does not make a live request to the external provider
+        and therefore does not validate credentials, latency, or provider availability.
       responses:
         '200':
           description: Connection status
@@ -145,19 +185,81 @@ paths:
                     example:
                     - products:read
                     - orders:read
-                    - cart:checkout
         '401':
           "$ref": "#/components/responses/Unauthorized"
+  "/ai-agent/prompt":
+    get:
+      tags:
+      - AI Agent
+      summary: Get the editable AI agent prompt
+      description: |
+        Returns the company prompt editable in the Whatsplaid panel. Runtime instructions added
+        by Whatsplaid for safety, enabled modules, ticket state, and contact context are not included.
+      responses:
+        '200':
+          description: Current editable prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data: {$ref: '#/components/schemas/AiAgentPrompt'}
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+    patch:
+      tags:
+      - AI Agent
+      summary: Replace the editable AI agent prompt
+      description: |
+        Replaces the prompt used as the base instructions for subsequent AI agent responses.
+        The prompt cannot be empty and is limited to 50,000 characters. Sending the current
+        prompt again is a successful no-op and returns `changed: false`.
+        Send the `revision` returned by GET as `expected_revision` to prevent overwriting a prompt
+        changed by another user between reading and updating it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 50000
+                expected_revision:
+                  type: string
+                  description: Optional SHA-256 revision returned by GET for optimistic concurrency control.
+            example:
+              prompt: You are the customer service AI agent for Example Company.
+              expected_revision: 2a4d7b...
+      responses:
+        '200':
+          description: Prompt updated or already identical
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data: {$ref: '#/components/schemas/AiAgentPrompt'}
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '409':
+          description: Prompt changed since the supplied revision was read
+        '422':
+          "$ref": "#/components/responses/ValidationError"
   "/ecommerce/products/search":
     get:
       tags:
       - Ecommerce
-      summary: Search products through the native gateway
+      summary: Search products through the configured data source
       description: |
-        Searches products in the native ecommerce provider already connected to Whatsplaid, such as Nuvemshop, Wix, or Shopify.
-
-        For custom ecommerce platforms, ERPs, or proprietary databases, prefer the Custom Data Connector contract,
-        where the customer's system exposes the endpoint and Whatsplaid queries it during the conversation.
+        Searches products through either a native integration, such as Nuvemshop, Wix, or Shopify,
+        or a Custom Data Connector configured for the company. This is a read-only data query and
+        does not create a cart, checkout, or WhatsApp conversation.
       parameters:
       - name: q
         in: query
@@ -174,7 +276,7 @@ paths:
         description: Product URL when the plugin or assistant already has the link.
       responses:
         '200':
-          description: Resultado da busca
+          description: Product search result
           content:
             application/json:
               schema:
@@ -222,12 +324,11 @@ paths:
     get:
       tags:
       - Ecommerce
-      summary: Search orders through the native gateway
+      summary: Search orders through the configured data source
       description: |
-        Searches orders in the native ecommerce provider already connected to Whatsplaid. Send at least one filter.
-
-        For custom ecommerce platforms, ERPs, or proprietary databases, prefer the Custom Data Connector contract,
-        where the customer's system exposes the order endpoint.
+        Searches orders through either a native integration or a Custom Data Connector configured
+        for the company. Send at least one filter. This is a read-only data query and does not create
+        a cart, checkout, or WhatsApp conversation.
       parameters:
       - name: number
         in: query
@@ -292,223 +393,6 @@ paths:
                     additionalProperties: true
         '401':
           "$ref": "#/components/responses/Unauthorized"
-  "/ecommerce/customers/search":
-    get:
-      tags:
-      - Ecommerce
-      summary: Search customers
-      description: Searches registered customers when the customer storage structure is configured.
-      parameters:
-      - name: id
-        in: query
-        schema:
-          type: string
-        example: '987'
-      - name: email
-        in: query
-        schema:
-          type: string
-          format: email
-        example: customer@store.com
-      - name: phone
-        in: query
-        schema:
-          type: string
-        example: '5511999999999'
-      responses:
-        '200':
-          description: Clientes encontrados
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  data:
-                    type: array
-                    items:
-                      "$ref": "#/components/schemas/Customer"
-        '501':
-          "$ref": "#/components/responses/ManualDatabaseChangeRequired"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-  "/ecommerce/customers/{id}":
-    get:
-      tags:
-      - Ecommerce
-      summary: Get customer
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        example: '987'
-      responses:
-        '200':
-          description: Customer found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  data:
-                    "$ref": "#/components/schemas/Customer"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '501':
-          "$ref": "#/components/responses/ManualDatabaseChangeRequired"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-  "/ecommerce/customers/{id}/orders":
-    get:
-      tags:
-      - Ecommerce
-      summary: Get a customer's orders
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        example: '987'
-      responses:
-        '200':
-          description: Orders found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  data:
-                    type: object
-                    additionalProperties: true
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '501':
-          "$ref": "#/components/responses/ManualDatabaseChangeRequired"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-  "/conversations/{phone}/cart":
-    get:
-      tags:
-      - Conversations
-      summary: List conversation cart
-      parameters:
-      - "$ref": "#/components/parameters/Phone"
-      responses:
-        '200':
-          description: Carrinho atual
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/GenericOkResponse"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-    delete:
-      tags:
-      - Conversations
-      summary: Clear conversation cart
-      parameters:
-      - "$ref": "#/components/parameters/Phone"
-      responses:
-        '200':
-          description: Carrinho limpo
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/GenericOkResponse"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-  "/conversations/{phone}/cart/items":
-    post:
-      tags:
-      - Conversations
-      summary: Add item to cart
-      parameters:
-      - "$ref": "#/components/parameters/Phone"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                id_produto:
-                  type: string
-                  example: '123456'
-                name:
-                  type: string
-                  example: Blue Sneakers
-                quantity:
-                  type: integer
-                  example: 1
-                price:
-                  type: number
-                  example: 149.9
-              additionalProperties: true
-      responses:
-        '200':
-          description: Item adicionado
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/GenericOkResponse"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-  "/conversations/{phone}/cart/items/{itemId}":
-    delete:
-      tags:
-      - Conversations
-      summary: Remove item from cart
-      parameters:
-      - "$ref": "#/components/parameters/Phone"
-      - name: itemId
-        in: path
-        required: true
-        schema:
-          type: string
-        example: '123456'
-      responses:
-        '200':
-          description: Item removido
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/GenericOkResponse"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-  "/conversations/{phone}/cart/checkout":
-    post:
-      tags:
-      - Conversations
-      summary: Checkout cart
-      parameters:
-      - "$ref": "#/components/parameters/Phone"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        '200':
-          description: Checkout created or response from the connected integration
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/GenericOkResponse"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
   "/webhook/outgoing/lead-capture":
     post:
       tags:
@@ -516,9 +400,10 @@ paths:
       summary: Payload sent by Whatsplaid to the customer's endpoint
       description: |
         This endpoint is illustrative: it represents the request sent by Whatsplaid to the
-        URL configured in the API & Webhooks panel.
+        URL configured in Developers > Outgoing webhooks for the canonical `lead.created` event.
+        See the dedicated outgoing-webhooks specification for all seven supported events.
 
-        The customer's system must respond with HTTP 200 or 204 for the endpoint to be considered valid.
+        Any HTTP 2xx response confirms delivery. Consumers must deduplicate retries by `delivery_id`.
       security: []
       requestBody:
         required: true
@@ -527,11 +412,24 @@ paths:
             schema:
               "$ref": "#/components/schemas/LeadCaptureWebhook"
             example:
+              event: lead.created
+              delivery_id: lead_701b4d2f
+              occurred_at: '2026-09-19T15:00:00Z'
+              source: unknown
+              data:
+                id: 123
+                name: Jane Smith
+                first_name: Jane
+                last_name: Smith
+                email: jane@example.com
+                phone: '+5511999999999'
+                tags: [customer]
+                custom_fields: {}
               id_lead: 123
               firstname: Jane
               lastname: Smith
               email: jane@example.com
-              phone: '551199999999'
+              phone: '+5511999999999'
       responses:
         '200':
           description: Expected response from the customer's system
@@ -541,8 +439,11 @@ paths:
     get:
       tags:
       - Contacts
-      summary: List contacts
-      description: Lists contacts/leads with filters. Use pagination with limit and offset.
+      summary: List CRM contacts
+      description: |
+        Lists people managed by the Whatsplaid lightweight CRM, including captured leads,
+        imported contacts, and existing customers identified through tags or custom fields.
+        Operational handoff records are not contacts and are excluded. Use pagination with limit and offset.
       parameters:
       - name: phone
         in: query
@@ -563,6 +464,12 @@ paths:
         schema:
           type: string
           format: date-time
+      - name: exclude_api_origin
+        in: query
+        description: When true, excludes contacts marked as originating from or already processed by an iPaaS/API flow. Intended for polling triggers that must not emit their own writes.
+        schema:
+          type: boolean
+          default: false
       - name: limit
         in: query
         schema:
@@ -585,7 +492,22 @@ paths:
       tags:
       - Contacts
       summary: Create or update contact
-      description: Creates or updates a contact using phone as the primary key.
+      description: |
+        Creates or updates a person in the Whatsplaid lightweight CRM. Customer lifecycle,
+        funnel, source, and external status should be represented by tags or custom fields.
+        Human handoff requests belong to `/handoffs` and are never updated through this resource.
+        Creates or partially updates a contact by its complete normalized phone (6–15 digits,
+        including country code; first digit must be nonzero). Common formatting is accepted.
+        Invalid phones return 422 before any write; multiple matching leads return 409.
+        Omitted name, email, tags and custom_fields are preserved on update.
+        Provided name/email replace their values; an empty string clears that value.
+        Provided tags replace all tags; [] clears them. Omitted tags are preserved.
+        custom_fields merges by top-level key: omitted keys remain, supplied values replace
+        the previous value, including false, 0, empty string and null (stored, not deletion).
+        An empty custom_fields object makes no changes. Nested objects are replaced, not deeply merged.
+        A top-level email also updates custom_fields.email and takes precedence over that key.
+        The custom field _tags is reserved; use the top-level tags property instead.
+        Invalid existing custom-field JSON returns 409 rather than overwriting stored data.
       requestBody:
         required: true
         content:
@@ -604,7 +526,13 @@ paths:
                 last_purchase: '2026-05-29'
       responses:
         '200':
-          description: Contact created or updated
+          description: Contact updated
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ContactWriteResponse"
+        '201':
+          description: Contact created
           content:
             application/json:
               schema:
@@ -709,7 +637,10 @@ paths:
       tags:
       - Messaging
       summary: Send text message
-      description: Sends free-form text only when there is a customer message received in the last 24 hours.
+      description: |
+        Replies with free-form text only when the contact has already initiated the conversation
+        and there is an inbound customer message within the last 24 hours. This endpoint cannot
+        start a new conversation.
       requestBody:
         required: true
         content:
@@ -746,6 +677,9 @@ paths:
                     type: boolean
                   window_opened_by:
                     type: string
+                  window_expires_at:
+                    type: string
+                    nullable: true
         '403':
           description: Outside the service window
           content:
@@ -760,8 +694,13 @@ paths:
     get:
       tags:
       - Conversations
-      summary: List conversations
-      description: Requer phone ou date_from para evitar exportacoes amplas.
+      summary: List conversations initiated by contacts
+      description: |
+        Requires phone or date_from to avoid broad exports. Returns only functional conversations
+        containing at least one inbound message from the contact. Failed outbound sends and internal
+        technical records do not create or reorder conversations. Official WhatsApp accounts are
+        isolated by their WABA phone number ID.
+        Each item includes whether the automatic assistant is currently active for that conversation.
       parameters:
       - name: phone
         in: query
@@ -778,9 +717,14 @@ paths:
           type: integer
           maximum: 100
           default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          default: 0
       responses:
         '200':
-          description: Conversas encontradas
+          description: Conversations found
           content:
             application/json:
               schema:
@@ -792,6 +736,8 @@ paths:
                     type: array
                     items:
                       "$ref": "#/components/schemas/Conversation"
+                  pagination:
+                    "$ref": "#/components/schemas/Pagination"
         '422':
           "$ref": "#/components/responses/ValidationError"
   "/conversations/{conversationId}/messages":
@@ -799,6 +745,9 @@ paths:
       tags:
       - Conversations
       summary: List messages from a conversation
+      description: |
+        Returns functional inbound messages and replies for a conversation already initiated by
+        the contact. Delivery failures may remain in the history for operational diagnosis.
       parameters:
       - name: conversationId
         in: path
@@ -819,7 +768,7 @@ paths:
           default: 0
       responses:
         '200':
-          description: Mensagens encontradas
+          description: Messages found
           content:
             application/json:
               schema:
@@ -831,6 +780,76 @@ paths:
                     type: array
                     items:
                       "$ref": "#/components/schemas/Message"
+                  pagination:
+                    "$ref": "#/components/schemas/Pagination"
+                  response_window:
+                    "$ref": "#/components/schemas/ResponseWindow"
+                  ai_agent:
+                    "$ref": "#/components/schemas/ConversationAiAgent"
+  "/conversations/{conversationId}/ai-agent":
+    parameters:
+    - name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Complete conversation phone number, including country code.
+    get:
+      tags:
+      - Conversations
+      summary: Get conversation AI agent state
+      description: Returns whether the AI agent is active for this conversation.
+      responses:
+        '200':
+          description: Current AI agent state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data: {$ref: '#/components/schemas/ConversationAiAgent'}
+        '422':
+          "$ref": "#/components/responses/ValidationError"
+    patch:
+      tags:
+      - Conversations
+      summary: Activate or pause the conversation AI agent
+      description: |
+        Changes the automatic assistant state only for this conversation. Setting `active` to
+        `false` also marks unanswered inbound messages as handled so they are not processed later.
+        Repeating the current state is a successful no-op and returns `changed: false`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active: {type: boolean}
+            examples:
+              pause:
+                value: {active: false}
+              activate:
+                value: {active: true}
+      responses:
+        '200':
+          description: AI agent state updated or already in the requested state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data:
+                    allOf:
+                    - {$ref: '#/components/schemas/ConversationAiAgent'}
+                    - type: object
+                      properties:
+                        changed: {type: boolean}
+        '422':
+          "$ref": "#/components/responses/ValidationError"
   "/handoffs":
     post:
       tags:
@@ -880,6 +899,88 @@ paths:
                     type: string
                   message:
                     type: string
+  "/tickets":
+    get:
+      tags:
+      - Tickets
+      summary: List human-service tickets
+      parameters:
+      - name: status
+        in: query
+        schema: {type: string, enum: [open, closed]}
+      - name: phone
+        in: query
+        schema: {type: string}
+      - name: date_from
+        in: query
+        schema: {type: string, format: date-time}
+      - name: limit
+        in: query
+        schema: {type: integer, maximum: 100, default: 50}
+      - name: offset
+        in: query
+        schema: {type: integer, default: 0}
+      responses:
+        '200':
+          description: Paginated tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/Ticket'}
+                  pagination: {$ref: '#/components/schemas/Pagination'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  "/tickets/{ticketId}":
+    get:
+      tags:
+      - Tickets
+      summary: Get ticket details
+      parameters:
+      - {$ref: '#/components/parameters/TicketId'}
+      responses:
+        '200':
+          description: Ticket found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data: {$ref: '#/components/schemas/Ticket'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  "/tickets/{ticketId}/close":
+    post:
+      tags:
+      - Tickets
+      summary: Close a ticket
+      description: |
+        Closes an open ticket, emits `ticket.closed`, and reactivates the conversation AI agent
+        when it was paused. This API operation does not send a WhatsApp message to the customer.
+        Closing an already closed ticket is a successful no-op with `changed: false`.
+      parameters:
+      - {$ref: '#/components/parameters/TicketId'}
+      responses:
+        '200':
+          description: Ticket closed or already closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  data:
+                    type: object
+                    properties:
+                      changed: {type: boolean}
+                      ticket: {$ref: '#/components/schemas/Ticket'}
+                      ai_agent: {$ref: '#/components/schemas/ConversationAiAgent'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
 components:
   securitySchemes:
     bearerAuth:
@@ -897,10 +998,21 @@ components:
     ContactId:
       name: contactId
       in: path
+      description: |
+        Exact contact ID in the authenticated company takes precedence. If not found,
+        a complete normalized phone may be used; partial phones are not accepted.
+        Multiple phone matches return 409; invalid phone identifiers return 422.
+        A missing short numeric ID returns 404.
       required: true
       schema:
         type: string
-      description: Lead ID or contact phone number.
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      description: Numeric ticket ID returned by the ticket list.
+      schema:
+        type: integer
   responses:
     Unauthorized:
       description: Missing or invalid token
@@ -911,6 +1023,18 @@ components:
           example:
             status: error
             message: Authorization Bearer token not provided
+    CapabilityUnavailable:
+      description: Operation unavailable for the current account configuration
+      content:
+        application/json:
+          schema:
+            "$ref": "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            code: capability_unavailable
+            capability: products_read
+            reason: not_in_plan
+            message: This operation is not available for the current account configuration
     ValidationError:
       description: Invalid request
       content:
@@ -953,6 +1077,8 @@ components:
               "$ref": "#/components/schemas/EcommerceConnection"
             modules:
               "$ref": "#/components/schemas/Modules"
+            capabilities:
+              "$ref": "#/components/schemas/Capabilities"
     EcommerceConnection:
       type: object
       properties:
@@ -983,59 +1109,86 @@ components:
           type: boolean
         knowledge_base:
           type: boolean
-        cart:
-          type: boolean
-    Customer:
+    Capability:
       type: object
+      required: [available, reason]
       properties:
-        id:
+        available:
+          type: boolean
+        reason:
           type: string
-          example: '987'
-        external_id:
-          type: string
-          example: woo-55
-        name:
-          type: string
-          example: Jane Smith
-        email:
-          type: string
-          example: jane@example.com
-        phone:
-          type: string
-          example: '551199999999'
-        country:
-          type: string
-          example: BR
-        state:
-          type: string
-          example: SP
-        city:
-          type: string
-          example: Sao Paulo
-        ecommerce:
-          type: string
-          example: woocommerce
-        store_url:
-          type: string
-          example: https://store.com
+          nullable: true
+          enum:
+          - account_disabled
+          - not_in_plan
+          - module_disabled
+          - integration_not_configured
+          - whatsapp_not_connected
+          - resource_not_defined
+    Capabilities:
+      type: object
+      additionalProperties:
+        "$ref": "#/components/schemas/Capability"
+      example:
+        contacts: {available: true, reason: null}
+        products_read: {available: false, reason: integration_not_configured}
+    AiAgentPrompt:
+      type: object
+      required: [prompt, length, max_length, revision]
+      properties:
+        prompt: {type: string}
+        length: {type: integer}
+        max_length: {type: integer, example: 50000}
+        revision: {type: string, description: SHA-256 hash used for optimistic concurrency control}
+        changed: {type: boolean, description: Present after PATCH}
     LeadCaptureWebhook:
       type: object
+      required: [event, delivery_id, occurred_at, source, data, id_lead, phone]
       properties:
+        event:
+          type: string
+          enum: [lead.created]
+        delivery_id:
+          type: string
+          description: Stable delivery identifier used for deduplication.
+        occurred_at:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [assistant, api, manual, import, unknown]
+        data:
+          type: object
+          required: [id, name, first_name, last_name, email, phone, tags, custom_fields]
+          properties:
+            id: {type: integer}
+            name: {type: string}
+            first_name: {type: string}
+            last_name: {type: string}
+            email: {type: string}
+            phone: {type: string}
+            tags: {type: array, items: {type: string}}
+            custom_fields: {type: object, additionalProperties: true}
         id_lead:
           type: integer
           example: 123
+          deprecated: true
         firstname:
           type: string
           example: Jane
+          deprecated: true
         lastname:
           type: string
           example: Smith
+          deprecated: true
         email:
           type: string
           example: jane@example.com
+          deprecated: true
         phone:
           type: string
-          example: '551199999999'
+          example: '+5511999999999'
+          deprecated: true
     GenericOkResponse:
       type: object
       properties:
@@ -1054,6 +1207,10 @@ components:
         message:
           type: string
         code:
+          type: string
+        capability:
+          type: string
+        reason:
           type: string
     ContactUpsert:
       type: object
@@ -1083,6 +1240,16 @@ components:
           type: array
           items:
             "$ref": "#/components/schemas/Contact"
+        pagination:
+          "$ref": "#/components/schemas/Pagination"
+    Pagination:
+      type: object
+      required: [limit, offset, has_more]
+      properties:
+        limit: {type: integer}
+        offset: {type: integer}
+        next_offset: {type: integer, nullable: true}
+        has_more: {type: boolean}
     ContactWriteResponse:
       type: object
       properties:
@@ -1140,6 +1307,44 @@ components:
           type: integer
         last_message_at:
           type: string
+        response_window:
+          "$ref": "#/components/schemas/ResponseWindow"
+        ai_agent:
+          "$ref": "#/components/schemas/ConversationAiAgent"
+    ConversationAiAgent:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+          description: True when the automatic assistant may reply in this conversation.
+    Ticket:
+      type: object
+      required: [id, number, status, phone, created_at]
+      properties:
+        id: {type: integer}
+        number: {type: string}
+        status: {type: string, enum: [open, closed]}
+        name: {type: string}
+        email: {type: string}
+        phone: {type: string}
+        summary: {type: string}
+        reason: {type: string}
+        category: {type: string}
+        priority: {type: string}
+        created_at: {type: string, format: date-time}
+    ResponseWindow:
+      type: object
+      required: [open, opened_at, expires_at]
+      properties:
+        open:
+          type: boolean
+        opened_at:
+          type: string
+          nullable: true
+        expires_at:
+          type: string
+          nullable: true
     Message:
       type: object
       properties:

@@ -1,70 +1,309 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid Outgoing Webhooks
-  version: 1.0.0
+  version: 1.4.2
   description: |
-    Contract for webhooks sent by Whatsplaid to the customer's system.
-
-    Outgoing webhooks are different from the public API and Custom Data Connectors:
-
-    - Public API: your system calls Whatsplaid.
-    - Custom Data Connector: Whatsplaid calls your system to query data.
-    - Outgoing webhook: Whatsplaid notifies your system when it captures a lead during a conversation.
-
-    Current status:
-    - lead.created / LEAD_CAPTURE is implemented in the current panel.
-
+    Contract for events sent by Whatsplaid. `lead.created` corresponds to the legacy `LEAD_CAPTURE` name.
+    A delivery is completed only after an HTTP 2xx response. Connection failures, 408, 425, 429,
+    and 5xx responses remain pending for a later attempt; most other 4xx responses are permanent.
+    Each run selects the oldest pending event for each company, isolating failures between accounts.
+    Contacts created through the API don't produce `lead.created`; updates don't suppress an event
+    that was already pending. Consumers must deduplicate deliveries by `delivery_id`.
+    Legacy top-level lead fields remain available during the compatibility period. New integrations
+    should consume the `data` object.
 servers:
   - url: https://your-system.com/webhooks/whatsplaid
-    description: URL configured by the customer in the Whatsplaid panel
-
-tags:
-  - name: Current
-    description: Webhook currently configurable in the panel.
-
 paths:
   /lead-created:
     post:
-      tags:
-        - Current
       summary: Lead captured
-      description: |
-        Payload sent by Whatsplaid when the assistant captures a new lead.
-
-        In the current panel this event appears as LEAD_CAPTURE.
-        The customer's endpoint must respond with HTTP 200 or 204.
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [lead.created]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+        - name: X-Whatsplaid-Signature
+          in: header
+          required: false
+          description: Reserved for `sha256=<HMAC>` and requires secure per-company secret storage.
+          schema: {type: string}
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LeadCreatedPayload'
+            schema: {$ref: '#/components/schemas/LeadCreated'}
             example:
+              event: lead.created
+              delivery_id: lead_701b4d2f
+              occurred_at: '2026-09-19T15:00:00Z'
+              source: unknown
+              data:
+                id: 123
+                name: Jane Smith da Silva
+                first_name: Jane
+                last_name: Smith da Silva
+                email: jane@example.com
+                phone: '+5511999999999'
+                tags: [customer]
+                custom_fields: {customer_type: business}
               id_lead: 123
               firstname: Jane
-              lastname: Smith
+              lastname: Smith da Silva
               email: jane@example.com
-              phone: '551199999999'
+              phone: '+5511999999999'
       responses:
-        '200':
-          description: Received successfully
-        '204':
-          description: Received successfully with no response body
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Invalid payload; permanent failure without automatic retry}
+        '408': {description: Receiver timeout; delivery is retried}
+        '425': {description: Receiver isn't ready; delivery is retried}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
+  /message-received:
+    post:
+      summary: Inbound message received
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [message.received]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MessageReceived'}
+      responses:
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Permanent receiver rejection}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
+  /message-sent:
+    post:
+      summary: Outbound message accepted by the WhatsApp provider
+      description: Emitted after an outbound message is persisted with a provider message identifier and no sending error.
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [message.sent]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MessageSent'}
+      responses:
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Permanent receiver rejection}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
+  /message-status-updated:
+    post:
+      summary: Outbound message delivery status changed
+      description: Emitted once for each persisted delivered, read, or failed status transition reported by an official or legacy WhatsApp provider.
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [message.status.updated]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MessageStatusUpdated'}
+      responses:
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Permanent receiver rejection}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
+  /ticket-created:
+    post:
+      summary: Human-service ticket created
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [ticket.created]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TicketCreated'}
+      responses:
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Permanent receiver rejection}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
+  /conversation-ai-agent-updated:
+    post:
+      summary: Conversation AI agent state changed
+      description: Emitted when the AI agent is activated or paused through the API, panel, or ticket lifecycle configuration.
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [conversation.ai_agent.updated]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConversationAiAgentUpdated'}
+      responses:
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Permanent receiver rejection}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
+  /ticket-closed:
+    post:
+      summary: Human-service ticket closed
+      parameters:
+        - {name: X-Whatsplaid-Event, in: header, required: true, schema: {type: string, enum: [ticket.closed]}}
+        - {name: X-Whatsplaid-Delivery, in: header, required: true, schema: {type: string}}
+        - {name: X-Whatsplaid-Timestamp, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TicketClosed'}
+      responses:
+        '200': {description: Event accepted}
+        '204': {description: Event accepted without a response body}
+        '400': {description: Permanent receiver rejection}
+        '429': {description: Receiver rate limit; delivery is retried}
+        '500': {description: Receiver failure; delivery is retried}
 components:
   schemas:
-    LeadCreatedPayload:
+    LeadCreated:
       type: object
-      required:
-        - id_lead
-        - phone
+      required: [event, delivery_id, occurred_at, source, data, id_lead, phone]
       properties:
-        id_lead:
-          type: integer
-        firstname:
-          type: string
-        lastname:
-          type: string
-        email:
-          type: string
-        phone:
-          type: string
+        event: {type: string, enum: [lead.created]}
+        delivery_id: {type: string, description: Stable delivery identifier used for deduplication}
+        occurred_at: {type: string, format: date-time}
+        source: {type: string, enum: [assistant, api, manual, import, unknown]}
+        data:
+          type: object
+          required: [id, name, first_name, last_name, email, phone, tags, custom_fields]
+          properties:
+            id: {type: integer}
+            name: {type: string}
+            first_name: {type: string}
+            last_name: {type: string}
+            email: {type: string}
+            phone: {type: string}
+            tags: {type: array, items: {type: string}}
+            custom_fields: {type: object, additionalProperties: true}
+        id_lead: {type: integer, deprecated: true}
+        firstname: {type: string, deprecated: true}
+        lastname: {type: string, deprecated: true}
+        email: {type: string, deprecated: true}
+        phone: {type: string, deprecated: true}
+    MessageReceived:
+      type: object
+      required: [event, delivery_id, occurred_at, data]
+      properties:
+        event: {type: string, enum: [message.received]}
+        delivery_id: {type: string}
+        occurred_at: {type: string, format: date-time}
+        data:
+          type: object
+          required: [id, conversation_id, phone, direction, type, body]
+          properties:
+            id: {type: integer}
+            whatsapp_message_id: {type: string}
+            conversation_id: {type: string}
+            phone: {type: string}
+            name: {type: string}
+            direction: {type: string, enum: [inbound]}
+            type: {type: string}
+            mimetype: {type: string}
+            body: {type: string}
+    MessageSent:
+      type: object
+      required: [event, delivery_id, occurred_at, data]
+      properties:
+        event: {type: string, enum: [message.sent]}
+        delivery_id: {type: string, description: Stable for the persisted outbound message}
+        occurred_at: {type: string, format: date-time}
+        data:
+          type: object
+          required: [id, whatsapp_message_id, conversation_id, phone, direction, type, body, status]
+          properties:
+            id: {type: integer}
+            whatsapp_message_id: {type: string}
+            conversation_id: {type: string}
+            phone: {type: string}
+            name: {type: string}
+            direction: {type: string, enum: [outbound]}
+            type: {type: string}
+            mimetype: {type: string}
+            body: {type: string}
+            status: {type: string, enum: [sent]}
+    MessageStatusUpdated:
+      type: object
+      required: [event, delivery_id, occurred_at, data]
+      properties:
+        event: {type: string, enum: [message.status.updated]}
+        delivery_id: {type: string, description: Stable for the message and normalized status pair}
+        occurred_at: {type: string, format: date-time}
+        data:
+          type: object
+          required: [id, whatsapp_message_id, conversation_id, phone, status, updated_at]
+          properties:
+            id: {type: integer}
+            whatsapp_message_id: {type: string}
+            conversation_id: {type: string}
+            phone: {type: string}
+            status: {type: string, enum: [delivered, read, failed]}
+            error: {type: string, description: Provider error detail when status is failed; otherwise empty}
+            updated_at: {type: string, format: date-time}
+    TicketData:
+      type: object
+      required: [id, number, status, phone, priority, created_at]
+      properties:
+        id: {type: integer}
+        number: {type: string}
+        status: {type: string, enum: [open, closed]}
+        name: {type: string}
+        email: {type: string}
+        phone: {type: string}
+        summary: {type: string}
+        reason: {type: string}
+        category: {type: string}
+        priority: {type: string}
+        created_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time, nullable: true}
+    ConversationAiAgentUpdated:
+      type: object
+      required: [event, delivery_id, occurred_at, data]
+      properties:
+        event: {type: string, enum: [conversation.ai_agent.updated]}
+        delivery_id: {type: string}
+        occurred_at: {type: string, format: date-time}
+        data:
+          type: object
+          required: [conversation_id, phone, ai_agent, reason]
+          properties:
+            conversation_id: {type: string}
+            phone: {type: string}
+            ai_agent:
+              type: object
+              required: [active]
+              properties:
+                active: {type: boolean}
+            reason: {type: string, enum: [api, manual, ticket.created, ticket.closed, unknown]}
+            ticket_number: {type: string, nullable: true}
+    TicketCreated:
+      type: object
+      required: [event, delivery_id, occurred_at, data]
+      properties:
+        event: {type: string, enum: [ticket.created]}
+        delivery_id: {type: string}
+        occurred_at: {type: string, format: date-time}
+        data: {$ref: '#/components/schemas/TicketData'}
+    TicketClosed:
+      type: object
+      required: [event, delivery_id, occurred_at, data]
+      properties:
+        event: {type: string, enum: [ticket.closed]}
+        delivery_id: {type: string}
+        occurred_at: {type: string, format: date-time}
+        data: {$ref: '#/components/schemas/TicketData'}

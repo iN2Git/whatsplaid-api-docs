@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid Custom Data Connector
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Contract for connecting any ecommerce platform, ERP, CRM, or custom database to the Whatsplaid assistant.
 
@@ -18,11 +18,14 @@ info:
     5. Whatsplaid answers the customer using the returned data.
 
     Panel configuration:
-    - Enter the external system base URL in Integrations > API & Webhooks > External connector.
+    - Enter the external system base URL in Developers > External connectors.
     - Configure product and order paths, for example /products/search and /orders/search.
     - Test both products and orders before activating the connector.
     - Once active, the assistant uses these endpoints during real conversation queries.
     - Calls made by the assistant appear in the external connector logs when the log table is configured.
+
+    Product and order operations in this contract are read-only data lookups. They do not create or
+    expose the internal Whatsplaid cart, checkout, or a new WhatsApp conversation.
 
 servers:
   - url: https://api.yourcompany.com/whatsplaid
