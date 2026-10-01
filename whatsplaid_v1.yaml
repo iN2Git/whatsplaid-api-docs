@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.4
+  version: 1.5.5
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -349,7 +349,7 @@ paths:
         example: '5511999999999'
       responses:
         '200':
-          description: Resultado da consulta
+          description: Order search result
           content:
             application/json:
               schema:
