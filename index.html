@@ -35,6 +35,14 @@
 
   <script>
     (function () {
+      var documentationUrl = new URL(window.location.href);
+      if (documentationUrl.searchParams.has("_gl")) {
+        documentationUrl.searchParams.delete("_gl");
+        window.history.replaceState(window.history.state, "", documentationUrl.href);
+      }
+    })();
+
+    (function () {
       var savedTheme = "";
       try {
         savedTheme = localStorage.getItem("whatsplaid-docs-theme") || "";
@@ -550,8 +558,8 @@
     <div class="specification-picker">
       <label for="specification-select">API specification</label>
       <select id="specification-select">
-        <option value="whatsplaid_v1.yaml">Whatsplaid Public API</option>
-        <option value="whatsplaid_connector_contract.yaml" selected>Custom Data Connector Contract</option>
+        <option value="whatsplaid_v1.yaml" selected>Whatsplaid Public API</option>
+        <option value="whatsplaid_connector_contract.yaml">Custom Data Connector Contract</option>
         <option value="whatsplaid_outgoing_webhooks.yaml">Outgoing Webhooks</option>
       </select>
     </div>
