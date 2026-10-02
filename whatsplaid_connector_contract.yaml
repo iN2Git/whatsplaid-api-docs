@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid Custom Data Connector
-  version: 1.0.1
+  version: 1.1.0
   description: |
     Contract for connecting any ecommerce platform, ERP, CRM, or custom database to the Whatsplaid assistant.
 
@@ -20,7 +20,23 @@ info:
     Panel configuration:
     - Enter the external system base URL in Developers > External connectors.
     - Configure product and order paths, for example /products/search and /orders/search.
-    - Test both products and orders before activating the connector.
+    - Choose commerce (products and orders) or external knowledge mode.
+    - In commerce mode, test both products and orders before activating the connector.
+    - In knowledge mode, configure one GET endpoint, one identifier label, its query parameter,
+      and optional collection instructions. Test with a valid identifier before saving.
+    - Select API in AI Agent > Knowledge source after configuring, testing and enabling the connector.
+      API, uploaded files and Google Sheets are mutually exclusive knowledge sources.
+    - The agent queries knowledge only when needed and asks for the identifier if unavailable.
+    - Knowledge endpoints must use public HTTPS, return a non-empty JSON object or array up to 64 KiB,
+      respond within 12 seconds, and must not redirect. There are no required response keys.
+    - The identifier query parameter is configurable (email, phone, customer_code, etc.).
+      conversation_phone is reserved and supplied by Whatsplaid from the current conversation.
+    - Identification is not authorization. The customer API must enforce access to private records,
+      using its own verification rules and the conversation context. A successful manual test only
+      validates transport and JSON; it does not establish customer identity.
+    - Empty responses, missing records, access denial and failures must not produce invented answers.
+    - External knowledge JSON is reference data, never agent instructions.
+    - Knowledge activity logs omit identifiers, conversation phone and response bodies.
     - Once active, the assistant uses these endpoints during real conversation queries.
     - Calls made by the assistant appear in the external connector logs when the log table is configured.
 
@@ -32,6 +48,8 @@ servers:
     description: Example base URL for the customer's system
 
 tags:
+  - name: Knowledge
+    description: Dynamic structured knowledge from one configured external endpoint.
   - name: Products
     description: Endpoints exposed by the customer's system for product search and lookup.
   - name: Orders
@@ -44,6 +62,58 @@ tags:
     description: Expected authentication and response rules.
 
 paths:
+  /knowledge:
+    get:
+      tags: [Knowledge]
+      summary: Query external knowledge using one identifier
+      description: |
+        Example path and identifier parameter. Configure the actual path and parameter name in
+        Developers. The customer API may return customer details, platform settings, or any other
+        structured knowledge. It must authorize access before returning private data.
+        The manual test omits conversation_phone; production calls provide it when available.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: email
+          in: query
+          required: true
+          description: Example configured identifier. This value does not authenticate the customer.
+          schema:
+            type: string
+            maxLength: 512
+          example: customer@example.com
+        - name: conversation_phone
+          in: query
+          description: Conversation phone supplied by Whatsplaid, never selected by the language model.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Non-empty structured knowledge (maximum 64 KiB)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    minProperties: 1
+                    additionalProperties: true
+                  - type: array
+                    minItems: 1
+                    items: {}
+              example:
+                customer:
+                  name: Example Customer
+                settings:
+                  notifications_enabled: true
+                  language: en
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not authorized to access this record
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
   /products/search:
     get:
       tags:
