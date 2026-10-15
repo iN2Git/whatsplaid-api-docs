@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.7
+  version: 1.5.8
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
