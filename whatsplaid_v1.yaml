@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.9
+  version: 1.5.10
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -260,21 +260,27 @@ paths:
         Searches products through either a native integration, such as Nuvemshop, Wix, or Shopify,
         or a Custom Data Connector configured for the company. This is a read-only data query and
         does not create a cart, checkout, or WhatsApp conversation.
-        Shopify searches require complete title words rather than substring matches (for example,
-        Class does not match Classic). Explicit `marca BRAND` or `brand BRAND` in q also filters
-        the exact vendor. Product URLs take precedence over title terms. Successful Shopify results
-        retain the product list and include vendor and variant details. Top-level inventory_quantity
-        refers only to the first returned variant, never to the entire product.
-        When Shopify finds no matching product, data contains status: no_match, products: [], and
-        inventory_status: unknown. Transport, GraphQL, and search-limit failures return status: error
-        with a technical code and inventory_status: unknown. Neither condition proves lack of stock.
+        All product sources validate complete words against product identity and variant data,
+        rather than accepting partial search hits (for example, Class does not match Classic).
+        Preferences absent from the product identity must match the same variant; stock quantities,
+        prices, and internal IDs are not evidence of a size or model. Product URLs take precedence
+        over title terms. Include the brand in q; do not rely on the words "marca" or "brand" to
+        parse an arbitrary trailing phrase into an exact manufacturer filter.
+        Successful results retain the source-specific product list and available variant details.
+        Shopify top-level inventory_quantity refers only to the first returned variant.
+        When no matching product is found, data contains status: no_match, products: [], and
+        inventory_status: unknown. Transport, response-validation, GraphQL, and search-limit failures
+        return status: error with a technical code and inventory_status: unknown. Neither condition
+        proves lack of stock. Search work is bounded and may not cover the entire catalog.
+        An enabled external product connector remains authoritative on empty or failed responses;
+        Whatsplaid does not silently switch to a native store integration.
       parameters:
       - name: q
         in: query
         schema:
           type: string
         example: sneakers
-        description: Search term, name, SKU, tag, or part of the description.
+        description: Complete search with product type, brand and preferences. Matching uses catalog identity and variant fields; description-only mentions do not establish an exact product match.
       - name: url
         in: query
         schema:
@@ -294,8 +300,13 @@ paths:
                     type: string
                     example: ok
                   data:
-                    type: object
-                    additionalProperties: true
+                    oneOf:
+                    - type: array
+                      items:
+                        type: object
+                        additionalProperties: true
+                    - type: object
+                      additionalProperties: true
         '422':
           "$ref": "#/components/responses/ValidationError"
         '401':
