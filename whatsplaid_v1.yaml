@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.10
+  version: 1.5.11
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -274,13 +274,30 @@ paths:
         proves lack of stock. Search work is bounded and may not cover the entire catalog.
         An enabled external product connector remains authoritative on empty or failed responses;
         Whatsplaid does not silently switch to a native store integration.
+        Shopify resolves manufacturers and product types from its live catalog. Remote filters retain
+        catalog spelling and accents; normalization is applied locally for comparisons. Without a
+        manufacturer, type filters use the original catalog values and candidates are validated locally.
+        Contradictory product titles and types are excluded. A product supported only by a type field,
+        without confirmation in its title, has match_status: needs_confirmation and lists the pending
+        preferences in unconfirmed_preferences. Such candidates are returned only when no confirmed
+        products are available. Confirmed products have match_status: matched.
+        Shopify products and their matching variants prioritize known positive inventory. Each variant
+        includes selected_options, inventory_tracked and inventory_status. The inventory states are
+        in_stock, out_of_stock, available_on_backorder, not_tracked and unknown. Untracked quantities
+        are null; backorders do not imply immediate availability. Product inventory_status summarizes
+        the matching variants, while top-level inventory_quantity still refers to the first returned
+        variant. matching_variants_complete indicates whether matching variations were fully checked;
+        variants_complete additionally requires the returned list to contain all retrieved variations.
+        search_complete indicates whether candidate pagination completed. A later page failure can
+        preserve already confirmed results with search_complete: false and a technical search_warning.
+        Empty Shopify outcomes include matched_brand and requested_product_type when resolved.
       parameters:
       - name: q
         in: query
         schema:
           type: string
         example: sneakers
-        description: Complete search with product type, brand and preferences. Matching uses catalog identity and variant fields; description-only mentions do not establish an exact product match.
+        description: Complete search with product type, brand and preferences. Matching uses catalog identity and variant fields. Contextual description terms require independent product-type evidence; color and size cannot be established by unrelated prose. Common Portuguese/English color terms are recognized without changing manufacturer names.
       - name: url
         in: query
         schema:
