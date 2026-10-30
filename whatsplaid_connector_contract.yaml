@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid Custom Data Connector
-  version: 1.1.1
+  version: 1.1.2
   description: |
     Contract for connecting any ecommerce platform, ERP, CRM, or custom database to the Whatsplaid assistant.
 
@@ -49,6 +49,10 @@ info:
     can identify the manufacturer; a title-only brand match is not manufacturer confirmation.
     Return an empty products array for an empty search result. Empty, malformed, or failed responses
     never prove lack of stock and do not trigger a silent fallback to a native store integration.
+    Common Portuguese/English color attribute terms are compared across product identity and variant
+    values, without applying those aliases to manufacturer names. Color mentions in unrelated prose
+    do not establish a matching garment color. Internal no-match/error outcomes carry search_complete;
+    this describes the lookup and never proves catalog-wide absence or inventory unavailability.
 
 servers:
   - url: https://api.yourcompany.com/whatsplaid
