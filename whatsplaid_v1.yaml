@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.8
+  version: 1.5.9
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -260,6 +260,14 @@ paths:
         Searches products through either a native integration, such as Nuvemshop, Wix, or Shopify,
         or a Custom Data Connector configured for the company. This is a read-only data query and
         does not create a cart, checkout, or WhatsApp conversation.
+        Shopify searches require complete title words rather than substring matches (for example,
+        Class does not match Classic). Explicit `marca BRAND` or `brand BRAND` in q also filters
+        the exact vendor. Product URLs take precedence over title terms. Successful Shopify results
+        retain the product list and include vendor and variant details. Top-level inventory_quantity
+        refers only to the first returned variant, never to the entire product.
+        When Shopify finds no matching product, data contains status: no_match, products: [], and
+        inventory_status: unknown. Transport, GraphQL, and search-limit failures return status: error
+        with a technical code and inventory_status: unknown. Neither condition proves lack of stock.
       parameters:
       - name: q
         in: query
