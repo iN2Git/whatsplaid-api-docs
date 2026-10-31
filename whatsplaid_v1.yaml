@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.11
+  version: 1.5.12
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -28,6 +28,11 @@ info:
     List endpoints use offset pagination and return `limit`, `offset`, `next_offset`, and `has_more`.
     Idempotency-Key is reserved but is not active until persistent per-company storage is provisioned;
     clients must not assume replay protection yet.
+
+    Inbound WhatsApp assistant processing tracks the stored message IDs in each batch. Messages
+    arriving during a reply remain pending for a subsequent batch. Recovery reuses stored pending
+    input without deleting and reinserting messages. Failed or interrupted batches are retained
+    for review instead of automatically repeating tool actions. This does not enable Idempotency-Key.
 
     Resource endpoints return HTTP 403 with `code: capability_unavailable` when the account's
     plan, modules, configuration, WhatsApp connection, or ecommerce integration does not permit
