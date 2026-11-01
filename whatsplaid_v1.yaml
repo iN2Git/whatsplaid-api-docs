@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.13
+  version: 1.6.0
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -39,9 +39,18 @@ info:
     URL is reported as successful; link generation does not confirm payment. Authorization failures
     are distinct from storefront downtime. Uncertain creation or a missing link preserves the cart
     and must not trigger automatic recreation. Identical POSTs are suppressed within one execution;
-    this is not persistent idempotency. The assistant cart does not quote shipping: delivery options
-    and cost must be checked in the store checkout. Public product/order read endpoints do not
-    create these drafts or expose the internal assistant cart.
+    this is not persistent idempotency. Public product/order read endpoints do not create these
+    drafts or expose the internal assistant cart.
+
+    The enabled native Nuvemshop assistant cart supports shipping_quote with postal_code through
+    the stable Storefront API 2026-11 when the store is enabled there. It quotes the saved cart
+    only when every line refers to the same variant, aggregating its quantities. Mixed-variant
+    carts require shipping calculation in the store checkout; individual quotes are never added
+    together. Quotes carry the store currency, decimal prices and optional delivery date ranges.
+    They are estimates, do not select a delivery method or alter checkout totals, and are discarded
+    if the saved cart changes during the request. Missing delivery dates are not inferred.
+    This public Storefront request does not use the Admin access token or create a provider cart
+    or order. It does not add a public Whatsplaid shipping endpoint or enable Admin cart quotation.
 
     Resource endpoints return HTTP 403 with `code: capability_unavailable` when the account's
     plan, modules, configuration, WhatsApp connection, or ecommerce integration does not permit
