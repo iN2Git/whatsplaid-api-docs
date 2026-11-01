@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.5.12
+  version: 1.5.13
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -33,6 +33,15 @@ info:
     arriving during a reply remain pending for a subsequent batch. Recovery reuses stored pending
     input without deleting and reinserting messages. Failed or interrupted batches are retained
     for review instead of automatically repeating tool actions. This does not enable Idempotency-Key.
+
+    Native Nuvemshop assistant checkout creation requires write_draft_orders and creates an unpaid
+    draft using validated customer and variant data. Only a confirmed draft with a valid checkout
+    URL is reported as successful; link generation does not confirm payment. Authorization failures
+    are distinct from storefront downtime. Uncertain creation or a missing link preserves the cart
+    and must not trigger automatic recreation. Identical POSTs are suppressed within one execution;
+    this is not persistent idempotency. The assistant cart does not quote shipping: delivery options
+    and cost must be checked in the store checkout. Public product/order read endpoints do not
+    create these drafts or expose the internal assistant cart.
 
     Resource endpoints return HTTP 403 with `code: capability_unavailable` when the account's
     plan, modules, configuration, WhatsApp connection, or ecommerce integration does not permit
