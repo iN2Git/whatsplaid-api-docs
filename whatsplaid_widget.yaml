@@ -1,0 +1,117 @@
+openapi: 3.0.3
+info:
+  title: Whatsplaid Storefront Widget
+  version: 1.1.0
+  description: |
+    Configuration for the Whatsplaid NubeSDK storefront widget.
+    Version 1.1.0 adds iconBackground, iconColor and size to the existing widget configuration.
+    Appearance defaults apply when a store has no saved customization.
+servers:
+  - url: https://admin.whatsplaid.com
+paths:
+  /includes/nubesdk/whatsapp_widget_config.php:
+    get:
+      operationId: getStorefrontWidget
+      summary: Get the enabled storefront widget configuration
+      parameters:
+        - in: query
+          name: store_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Disabled widget or public storefront configuration
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DisabledWidget'
+                  - $ref: '#/components/schemas/EnabledWidget'
+        '400':
+          description: Missing or empty store_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisabledWidget'
+components:
+  schemas:
+    DisabledWidget:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          enum: [false]
+    EnabledWidget:
+      type: object
+      required: [enabled, storeId, company, widget, texts]
+      properties:
+        enabled:
+          type: boolean
+          enum: [true]
+        storeId:
+          type: string
+        company:
+          type: object
+          properties:
+            name:
+              type: string
+            url:
+              type: string
+            landingPage:
+              type: string
+        widget:
+          type: object
+          required: [type, buttonLabel, title, description, background, color, iconBackground, iconColor, size, whatsappUrl]
+          properties:
+            type:
+              type: string
+              enum: [floating_button]
+            buttonLabel:
+              type: string
+            title:
+              type: string
+            description:
+              type: string
+            background:
+              allOf:
+                - $ref: '#/components/schemas/HexColor'
+              default: '#103D2F'
+            color:
+              allOf:
+                - $ref: '#/components/schemas/HexColor'
+              default: '#FFFFFF'
+            iconBackground:
+              allOf:
+                - $ref: '#/components/schemas/HexColor'
+              default: '#25D366'
+            iconColor:
+              allOf:
+                - $ref: '#/components/schemas/HexColor'
+              default: '#FFFFFF'
+            size:
+              type: integer
+              minimum: 48
+              maximum: 96
+              default: 64
+              description: Button height in CSS pixels; padding, icon and label scale proportionally.
+            whatsappUrl:
+              type: string
+              format: uri
+        texts:
+          type: object
+          properties:
+            badge:
+              type: string
+            title:
+              type: string
+            description:
+              type: string
+            cta:
+              type: string
+            close:
+              type: string
+    HexColor:
+      type: string
+      pattern: '^#[0-9A-Fa-f]{6}$'
