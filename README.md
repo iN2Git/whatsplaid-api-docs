@@ -12,6 +12,7 @@ This repository contains the public technical contracts for the Whatsplaid API, 
 - `whatsplaid_v1.yaml`: REST API for account capabilities, contacts, conversations, messages, human handoff, tickets, products, and orders.
 - `whatsplaid_outgoing_webhooks.yaml`: Events sent by Whatsplaid, including payloads, delivery headers, and retry behavior.
 - `whatsplaid_connector_contract.yaml`: Contract that external ecommerce, ERP, CRM, or custom systems can implement so Whatsplaid can query customer data.
+- `whatsplaid_widget.yaml`: Public NubeSDK storefront widget configuration and appearance settings.
 
 ## Versioning
 
