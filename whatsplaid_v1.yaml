@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.6.0
+  version: 1.6.1
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -297,6 +297,15 @@ paths:
         proves lack of stock. Search work is bounded and may not cover the entire catalog.
         An enabled external product connector remains authoritative on empty or failed responses;
         Whatsplaid does not silently switch to a native store integration.
+        Assistant searches validate supplied manufacturers against catalog evidence before applying
+        manufacturer filters. An unrecognized manufacturer term remains in the full model search.
+        When the full product identity and requested variant match but manufacturer classification
+        remains ambiguous, candidates have match_status: needs_confirmation with brand in
+        unconfirmed_preferences and retain their actual catalog manufacturer. This is not confirmation
+        of a substitute brand. Recognized manufacturers retain exact matching; explicit manufacturer
+        wording in the query is not silently relaxed. Wix and Nuvemshop continue searching for exact
+        manufacturers before returning ambiguous candidates, whose search_complete is conservatively
+        false. Exact product URLs retain their existing identity and manufacturer constraints.
         Shopify resolves manufacturers and product types from its live catalog. Remote filters retain
         catalog spelling and accents; normalization is applied locally for comparisons. Without a
         manufacturer, type filters use the original catalog values and candidates are validated locally.
