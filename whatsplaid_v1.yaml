@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.6.1
+  version: 1.6.2
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -306,6 +306,15 @@ paths:
         wording in the query is not silently relaxed. Wix and Nuvemshop continue searching for exact
         manufacturers before returning ambiguous candidates, whose search_complete is conservatively
         false. Exact product URLs retain their existing identity and manufacturer constraints.
+        Structured category names can establish a leading classification term absent from the title.
+        This conservative recovery accepts only a complete single-word leading category label,
+        including regular singular/plural forms, when other query terms remain. Category IDs,
+        category descriptions, partial labels, colors and numeric terms cannot establish that match.
+        Other ingredients, manufacturer and variant preferences retain their existing checks.
+        Classification supported outside the title is returned as needs_confirmation with product_type
+        in unconfirmed_preferences. Nuvemshop retrieval explicitly includes product categories; sources
+        without usable named categories retain their existing behavior. Categories are never added
+        wholesale to product identity or used to establish later ingredient or variant terms.
         Shopify resolves manufacturers and product types from its live catalog. Remote filters retain
         catalog spelling and accents; normalization is applied locally for comparisons. Without a
         manufacturer, type filters use the original catalog values and candidates are validated locally.
