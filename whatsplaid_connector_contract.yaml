@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid Custom Data Connector
-  version: 1.1.2
+  version: 1.1.3
   description: |
     Contract for connecting any ecommerce platform, ERP, CRM, or custom database to the Whatsplaid assistant.
 
@@ -47,6 +47,12 @@ info:
     are candidates: Whatsplaid validates complete identity words and any preferences against the
     same variant when variant data is provided in metadata. Optional metadata.brand or metadata.vendor
     can identify the manufacturer; a title-only brand match is not manufacturer confirmation.
+    In assistant searches, an unconfirmed manufacturer classification may be a model term. Products
+    matching the complete query and the same variant can be retained as needs_confirmation with
+    brand in unconfirmed_preferences, preserving their actual manufacturer metadata. These are
+    candidates, not confirmed manufacturer substitutions. Exact brands and explicit manufacturer
+    wording remain protected; complete words such as Class never match Classic. No request fields
+    or provider endpoints are added for this recovery.
     Return an empty products array for an empty search result. Empty, malformed, or failed responses
     never prove lack of stock and do not trigger a silent fallback to a native store integration.
     Common Portuguese/English color attribute terms are compared across product identity and variant
