@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Whatsplaid API
-  version: 1.6.2
+  version: 1.6.3
   description: |
     Public Whatsplaid API for actions and external system integrations with the platform.
 
@@ -55,6 +55,9 @@ info:
     Resource endpoints return HTTP 403 with `code: capability_unavailable` when the account's
     plan, modules, configuration, WhatsApp connection, or ecommerce integration does not permit
     the operation. Use `/capabilities` to discover availability before building dynamic interfaces.
+    A confirmed Meta partner disconnection disables the saved WhatsApp connection after the
+    reconnection notice is accepted for delivery. The customer must reconnect through the panel;
+    this lifecycle handling does not create a new public endpoint or outgoing webhook event.
 servers:
 - url: https://api.whatsplaid.com/v1
   description: Production
